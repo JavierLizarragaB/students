@@ -90,180 +90,196 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2000)
 }
 
-// ─── GRÁFICA ─────────────────────────────────────────────────────────────────
-// Promedio de math/reading/writing agrupado por parental_education
+// ─── GRÁFICAS ────────────────────────────────────────────────────────────────
+// Paleta categórica validada para daltonismo (azul, naranja, aqua)
+const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a']
+const STATUS = { pass: '#0ca30c', fail: '#d03b3b' }
+const SUBJECTS = [
+  { key: 'math_score', label: 'Matemáticas' },
+  { key: 'reading_score', label: 'Lectura' },
+  { key: 'writing_score', label: 'Escritura' },
+]
+const FONT = '-apple-system, BlinkMacSystemFont, sans-serif'
+const GRID = '#e5e5ea'
+const MUTED = '#86868b'
+
+Chart.defaults.font.family = FONT
+Chart.defaults.color = MUTED
+Chart.defaults.plugins.legend.labels.color = '#1d1d1f'
+Chart.defaults.plugins.legend.labels.boxWidth = 12
+Chart.defaults.maintainAspectRatio = false
+
+const charts = {}
+
+const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0
+const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1)
+
+// Supabase devuelve máximo 1000 filas por consulta: pedir en bloques
+async function fetchAllStudents() {
+  const cols = 'gender, ethnicity, parental_education, lunch, test_prep, math_score, reading_score, writing_score, pass_math'
+  const all = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from('students').select(cols).order('id').range(from, from + 999)
+    if (error) throw error
+    all.push(...data)
+    if (data.length < 1000) break
+  }
+  return all
+}
+
+function groupBy(data, key) {
+  const groups = {}
+  data.forEach(r => (groups[r[key]] ||= []).push(r))
+  return groups
+}
+
+function draw(id, config) {
+  if (charts[id]) charts[id].destroy()
+  charts[id] = new Chart(document.getElementById(id), config)
+}
+
+function axis(title, extra = {}) {
+  return {
+    ticks: { color: MUTED },
+    grid: { color: GRID },
+    title: title ? { display: true, text: title, color: MUTED } : undefined,
+    ...extra,
+  }
+}
+
+// Barras agrupadas: promedio de cada materia por categoría
+function subjectBars(id, data, key, order) {
+  const groups = groupBy(data, key)
+  const labels = (order || Object.keys(groups).sort()).filter(k => groups[k])
+
+  draw(id, {
+    type: 'bar',
+    data: {
+      labels: labels.map(capitalize),
+      datasets: SUBJECTS.map((s, i) => ({
+        label: s.label,
+        data: labels.map(l => avg(groups[l].map(r => r[s.key]))),
+        backgroundColor: SERIES_COLORS[i],
+        borderRadius: 4,
+        categoryPercentage: 0.7,
+      })),
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: axis(null, { grid: { display: false } }),
+        y: axis('Promedio', { min: 0, max: 100 }),
+      },
+    },
+  })
+}
+
+function lunchPassChart(data) {
+  const groups = groupBy(data, 'lunch')
+  const labels = ['standard', 'free/reduced'].filter(k => groups[k])
+  const pct = l => Math.round(100 * groups[l].filter(r => r.pass_math === 1).length / groups[l].length)
+
+  draw('chart-lunch', {
+    type: 'bar',
+    data: {
+      labels: labels.map(capitalize),
+      datasets: [
+        { label: 'Aprobados', data: labels.map(pct), backgroundColor: STATUS.pass },
+        { label: 'Reprobados', data: labels.map(l => 100 - pct(l)), backgroundColor: STATUS.fail },
+      ].map(d => ({ ...d, borderColor: '#fff', borderWidth: { left: 2 }, borderSkipped: false, barPercentage: 0.6 })),
+    },
+    options: {
+      indexAxis: 'y',
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.raw}% (${groups[labels[ctx.dataIndex]].length} estudiantes)`,
+          },
+        },
+      },
+      scales: {
+        x: axis('% de estudiantes', { stacked: true, min: 0, max: 100, ticks: { color: MUTED, callback: v => v + '%' } }),
+        y: axis(null, { stacked: true, grid: { display: false } }),
+      },
+    },
+  })
+}
+
+function histogramChart(data) {
+  const bins = [[0, 39], [40, 49], [50, 59], [60, 69], [70, 79], [80, 89], [90, 100]]
+
+  draw('chart-histogram', {
+    type: 'bar',
+    data: {
+      labels: bins.map(([a, b]) => `${a}–${b}`),
+      datasets: SUBJECTS.map((s, i) => ({
+        label: s.label,
+        data: bins.map(([a, b]) => data.filter(r => r[s.key] >= a && r[s.key] <= b).length),
+        backgroundColor: SERIES_COLORS[i],
+        borderRadius: 4,
+        categoryPercentage: 0.75,
+      })),
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: axis('Rango de puntaje', { grid: { display: false } }),
+        y: axis('Estudiantes', { beginAtZero: true }),
+      },
+    },
+  })
+}
+
+function scatterChart(data) {
+  const series = [
+    { value: 'none', label: 'Sin curso' },
+    { value: 'completed', label: 'Curso completado' },
+  ]
+
+  draw('chart-scatter', {
+    type: 'scatter',
+    data: {
+      datasets: series.map((s, i) => ({
+        label: s.label,
+        data: data.filter(r => r.test_prep === s.value).map(r => ({ x: r.reading_score, y: r.writing_score })),
+        backgroundColor: SERIES_COLORS[i] + '99',
+        borderColor: '#fff',
+        borderWidth: 1,
+        pointRadius: 4,
+        pointHoverRadius: 7,
+      })),
+    },
+    options: {
+      plugins: {
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label} — Lectura ${ctx.raw.x}, Escritura ${ctx.raw.y}` } },
+      },
+      scales: {
+        x: axis('Lectura', { min: 0, max: 100 }),
+        y: axis('Escritura', { min: 0, max: 100 }),
+      },
+    },
+  })
+}
+
 async function renderChart() {
-  renderParentalEducationChart()
-  renderEthnicityChart()
-}
+  let data
+  try {
+    data = await fetchAllStudents()
+  } catch (error) {
+    console.error(error)
+    showToast('Error al cargar gráficas')
+    return
+  }
 
-async function renderParentalEducationChart() {
-  const { data, error } = await db.from('students').select('parental_education, math_score, reading_score, writing_score')
-  if (error) { console.error(error); return }
-
-  // Agrupar manualmente
-  const groups = {}
-  data.forEach(r => {
-    const key = r.parental_education
-    if (!groups[key]) groups[key] = { math: [], reading: [], writing: [] }
-    groups[key].math.push(r.math_score)
-    groups[key].reading.push(r.reading_score)
-    groups[key].writing.push(r.writing_score)
-  })
-
-  const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
-
-  // Orden lógico del nivel educativo
-  const order = ["some high school", "high school", "some college", "associate's degree", "bachelor's degree", "master's degree"]
-  const labels = order.filter(k => groups[k])
-
-  const ctx = document.getElementById('myChart').getContext('2d')
-
-  // Destruir chart previo si existe
-  if (window._parentalChart) window._parentalChart.destroy()
-
-  window._parentalChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
-      datasets: [
-        {
-          label: 'Matemáticas',
-          data: labels.map(l => avg(groups[l].math)),
-          backgroundColor: 'rgba(0,113,227,0.8)',
-          borderRadius: 8,
-        },
-        {
-          label: 'Lectura',
-          data: labels.map(l => avg(groups[l].reading)),
-          backgroundColor: 'rgba(52,199,89,0.8)',
-          borderRadius: 8,
-        },
-        {
-          label: 'Escritura',
-          data: labels.map(l => avg(groups[l].writing)),
-          backgroundColor: 'rgba(255,159,10,0.8)',
-          borderRadius: 8,
-        },
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { 
-          labels: { 
-            color: '#1d1d1f',
-            font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' }
-          } 
-        },
-      },
-      scales: {
-        x: { 
-          ticks: { color: '#86868b', font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' } }, 
-          grid: { color: '#e5e5ea' } 
-        },
-        y: {
-          ticks: { color: '#86868b', font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' } },
-          grid: { color: '#e5e5ea' },
-          min: 50, max: 80,
-          title: { display: true, text: 'Promedio', color: '#86868b', font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' } }
-        }
-      }
-    }
-  })
-}
-
-async function renderEthnicityChart() {
-  const { data, error } = await db.from('students').select('ethnicity, math_score, reading_score, writing_score')
-  if (error) { console.error(error); return }
-
-  // Agrupar manualmente por etnia
-  const groups = {}
-  data.forEach(r => {
-    const key = r.ethnicity
-    if (!groups[key]) groups[key] = { math: [], reading: [], writing: [] }
-    groups[key].math.push(r.math_score)
-    groups[key].reading.push(r.reading_score)
-    groups[key].writing.push(r.writing_score)
-  })
-
-  const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
-
-  // Calcular promedio general para cada etnia y ordenar de menor a mayor
-  const ethnicityStats = Object.keys(groups).map(ethnicity => {
-    const mathAvg = avg(groups[ethnicity].math)
-    const readingAvg = avg(groups[ethnicity].reading)
-    const writingAvg = avg(groups[ethnicity].writing)
-    const overallAvg = (mathAvg + readingAvg + writingAvg) / 3
-    
-    return {
-      ethnicity,
-      mathAvg,
-      readingAvg,
-      writingAvg,
-      overallAvg
-    }
-  })
-
-  // Ordenar por promedio general de menor a mayor
-  ethnicityStats.sort((a, b) => a.overallAvg - b.overallAvg)
-
-  const labels = ethnicityStats.map(s => s.ethnicity.charAt(0).toUpperCase() + s.ethnicity.slice(1))
-
-  const ctx = document.getElementById('ethnicityChart').getContext('2d')
-
-  // Destruir chart previo si existe
-  if (window._ethnicityChart) window._ethnicityChart.destroy()
-
-  window._ethnicityChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: 'Matemáticas',
-          data: ethnicityStats.map(s => s.mathAvg),
-          backgroundColor: 'rgba(0,113,227,0.8)',
-          borderRadius: 8,
-        },
-        {
-          label: 'Lectura',
-          data: ethnicityStats.map(s => s.readingAvg),
-          backgroundColor: 'rgba(52,199,89,0.8)',
-          borderRadius: 8,
-        },
-        {
-          label: 'Escritura',
-          data: ethnicityStats.map(s => s.writingAvg),
-          backgroundColor: 'rgba(255,159,10,0.8)',
-          borderRadius: 8,
-        },
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { 
-          labels: { 
-            color: '#1d1d1f',
-            font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' }
-          } 
-        },
-      },
-      scales: {
-        x: { 
-          ticks: { color: '#86868b', font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' } }, 
-          grid: { color: '#e5e5ea' } 
-        },
-        y: {
-          ticks: { color: '#86868b', font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' } },
-          grid: { color: '#e5e5ea' },
-          min: 50, max: 80,
-          title: { display: true, text: 'Promedio', color: '#86868b', font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' } }
-        }
-      }
-    }
-  })
+  subjectBars('chart-education', data, 'parental_education',
+    ["some high school", "high school", "some college", "associate's degree", "bachelor's degree", "master's degree"])
+  subjectBars('chart-prep', data, 'test_prep', ['none', 'completed'])
+  lunchPassChart(data)
+  subjectBars('chart-gender', data, 'gender', ['female', 'male'])
+  histogramChart(data)
+  scatterChart(data)
+  subjectBars('chart-ethnicity', data, 'ethnicity')
 }
 
 // ─── TABLA ───────────────────────────────────────────────────────────────────

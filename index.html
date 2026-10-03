@@ -14,22 +14,55 @@
     <span class="logo">EduInsights</span>
     <div class="nav-links">
       <button class="nav-btn active" onclick="showView('table')">Tabla</button>
-      <button class="nav-btn" onclick="showView('chart')">Gráfica</button>
+      <button class="nav-btn" onclick="showView('chart')">Gráficas</button>
       <button class="nav-btn" onclick="showView('predict')">Predicción</button>
     </div>
   </nav>
 
   <!-- VISTA GRÁFICA -->
   <div id="view-chart" class="view">
-    <div class="card">
-      <h2>Promedio de scores por nivel educativo del tutor</h2>
-      <p class="subtitle">¿Importa el nivel de estudios de los padres en el rendimiento?</p>
-      <canvas id="myChart"></canvas>
-    </div>
-    <div class="card" style="margin-top: 24px;">
-      <h2>Promedio de scores por etnia del alumno</h2>
-      <p class="subtitle">¿Cómo varía el rendimiento según el origen étnico?</p>
-      <canvas id="ethnicityChart"></canvas>
+    <div class="charts-grid">
+      <div class="card chart-card wide">
+        <h2>Promedio de scores por nivel educativo del tutor</h2>
+        <p class="subtitle">¿Importa el nivel de estudios de los padres en el rendimiento?</p>
+        <div class="chart-box"><canvas id="chart-education"></canvas></div>
+      </div>
+
+      <div class="card chart-card">
+        <h2>Efecto del curso de preparación</h2>
+        <p class="subtitle">Promedio por materia: sin curso vs. curso completado</p>
+        <div class="chart-box"><canvas id="chart-prep"></canvas></div>
+      </div>
+
+      <div class="card chart-card">
+        <h2>Aprobación en matemáticas por tipo de almuerzo</h2>
+        <p class="subtitle">Porcentaje de aprobados (≥ 60) y reprobados</p>
+        <div class="chart-box"><canvas id="chart-lunch"></canvas></div>
+      </div>
+
+      <div class="card chart-card">
+        <h2>Puntajes por género</h2>
+        <p class="subtitle">Promedio por materia</p>
+        <div class="chart-box"><canvas id="chart-gender"></canvas></div>
+      </div>
+
+      <div class="card chart-card">
+        <h2>Distribución de calificaciones</h2>
+        <p class="subtitle">Número de estudiantes por rango de puntaje</p>
+        <div class="chart-box"><canvas id="chart-histogram"></canvas></div>
+      </div>
+
+      <div class="card chart-card">
+        <h2>Lectura vs. escritura</h2>
+        <p class="subtitle">Cada punto es un estudiante, por curso de preparación</p>
+        <div class="chart-box"><canvas id="chart-scatter"></canvas></div>
+      </div>
+
+      <div class="card chart-card">
+        <h2>Promedio por grupo étnico</h2>
+        <p class="subtitle">Promedio por materia en cada grupo</p>
+        <div class="chart-box"><canvas id="chart-ethnicity"></canvas></div>
+      </div>
     </div>
   </div>
 
